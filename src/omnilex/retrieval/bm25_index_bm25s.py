@@ -31,6 +31,13 @@ except ImportError:
     BM25S_AVAILABLE = False
     print("Warning: bm25s not installed. Install with: pip install bm25s")
 
+try:
+    from bm25s.utils.corpus import JsonlCorpus
+    JSONL_CORPUS_AVAILABLE = True
+except ImportError:
+    JSONL_CORPUS_AVAILABLE = False
+    print("Warning: JsonlCorpus not available. Install bm25s>=0.2.0")
+
 
 class BM25SIndex:
     """Memory-efficient BM25 index using bm25s with optional memory-mapping.
@@ -142,6 +149,56 @@ class BM25SIndex:
         self.bm25.index(self.tokenized_corpus)
         
         print("BM25 index built successfully!")
+        
+        # Save with memory-mapping if requested
+        if self.use_mmap and self.mmap_path:
+            self._save_mmap()
+
+    def build_from_jsonl(self, jsonl_path: str, text_field: str = "text"):
+        """Build BM25 index from JSONL file using memory-mapped JsonlCorpus.
+        
+        This method is memory-efficient as it doesn't load all documents into RAM.
+        Only citations and IDs are stored in memory; the full text is read from
+        disk on-demand via JsonlCorpus.
+        
+        Args:
+            jsonl_path: Path to JSONL file
+            text_field: Key for document text in JSONL records
+        """
+        if not JSONL_CORPUS_AVAILABLE:
+            raise ImportError(
+                "JsonlCorpus is not available. Install bm25s>=0.2.0"
+            )
+        
+        print(f"Building BM25 from JSONL using JsonlCorpus: {jsonl_path}")
+        
+        # Use JsonlCorpus for memory-mapped access
+        corpus = JsonlCorpus(jsonl_path)
+        
+        # Store document citations and IDs (not full text) - small memory footprint
+        self.doc_citations = []
+        self.doc_ids = []
+        for i in range(len(corpus)):
+            doc = corpus[i]
+            citation = doc.get(self.citation_field, "")
+            doc_id = doc.get("id", "") or doc.get(self.citation_field, "")
+            self.doc_citations.append(citation)
+            self.doc_ids.append(doc_id)
+        
+        # Extract texts for tokenization
+        print("Extracting texts from JsonlCorpus...")
+        corpus_texts = [corpus[i].get(text_field, "") for i in range(len(corpus))]
+        
+        # Tokenize using bm25s
+        print("Tokenizing corpus...")
+        self.tokenized_corpus = bm25s.tokenize(corpus_texts)
+        
+        # Build index
+        print("Building bm25s index...")
+        self.bm25 = bm25s.BM25()
+        self.bm25.index(self.tokenized_corpus)
+        
+        print(f"BM25 index built from JSONL! Documents: {len(corpus)}")
         
         # Save with memory-mapping if requested
         if self.use_mmap and self.mmap_path:
