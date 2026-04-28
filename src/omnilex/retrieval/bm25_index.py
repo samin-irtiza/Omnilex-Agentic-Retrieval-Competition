@@ -12,6 +12,9 @@ class BM25Index:
     """BM25 index for keyword search over legal documents.
 
     Supports Swiss federal laws (SR) and court decisions (BGE).
+
+    Memory optimization: Set store_documents=False to avoid storing documents in memory.
+    Only document IDs and tokenized corpus will be kept, reducing memory usage significantly.
     """
 
     def __init__(
@@ -19,6 +22,7 @@ class BM25Index:
         documents: list[dict] | None = None,
         text_field: str = "text",
         citation_field: str = "citation",
+        store_documents: bool = True,
     ):
         """Initialize BM25 index.
 
@@ -26,11 +30,16 @@ class BM25Index:
             documents: List of document dictionaries
             text_field: Key for document text in dict
             citation_field: Key for citation string in dict
+            store_documents: If False, don't store documents in memory (memory optimization).
+                            Only document IDs will be stored. Search will return doc indices
+                            instead of document copies.
         """
         self.text_field = text_field
         self.citation_field = citation_field
+        self.store_documents = store_documents
 
         self.documents: list[dict] = []
+        self.doc_ids: list[str] = []  # Store only document IDs when store_documents=False
         self.index: BM25Okapi | None = None
         self._tokenized_corpus: list[list[str]] = []
 
@@ -61,7 +70,15 @@ class BM25Index:
         Args:
             documents: List of document dictionaries
         """
-        self.documents = documents
+        if self.store_documents:
+            self.documents = documents
+        else:
+            # Memory optimization: only store document IDs, not full documents
+            self.documents = []  # Clear any existing documents
+            self.doc_ids = []
+            for doc in documents:
+                doc_id = doc.get(self.citation_field, "") or doc.get("id", "")
+                self.doc_ids.append(doc_id)
 
         # Tokenize all documents
         self._tokenized_corpus = []
@@ -87,7 +104,9 @@ class BM25Index:
             return_scores: Whether to include BM25 scores in results
 
         Returns:
-            List of matching documents (with optional scores)
+            List of matching documents (with optional scores).
+            When store_documents=False, returns dicts with '_id' (doc ID) and '_index' (index)
+            instead of full document copies.
         """
         if self.index is None:
             raise ValueError("Index not built. Call build() first.")
@@ -110,10 +129,21 @@ class BM25Index:
             if scores[idx] <= 0:
                 continue
 
-            doc = self.documents[idx].copy()
-            if return_scores:
-                doc["_score"] = float(scores[idx])
-            results.append(doc)
+            if self.store_documents and self.documents:
+                # Original behavior: return document copies
+                doc = self.documents[idx].copy()
+                if return_scores:
+                    doc["_score"] = float(scores[idx])
+                doc["_index"] = idx
+                results.append(doc)
+            else:
+                # Memory-efficient mode: return minimal info (ID and index)
+                result = {"_index": idx}
+                if self.doc_ids and idx < len(self.doc_ids):
+                    result["_id"] = self.doc_ids[idx]
+                if return_scores:
+                    result["_score"] = float(scores[idx])
+                results.append(result)
 
         return results
 
@@ -127,10 +157,12 @@ class BM25Index:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
-            "documents": self.documents,
+            "documents": self.documents if self.store_documents else [],
+            "doc_ids": self.doc_ids,
             "tokenized_corpus": self._tokenized_corpus,
             "text_field": self.text_field,
             "citation_field": self.citation_field,
+            "store_documents": self.store_documents,
         }
 
         with open(path, "wb") as f:
@@ -154,8 +186,10 @@ class BM25Index:
         instance = cls(
             text_field=data["text_field"],
             citation_field=data.get("citation_field", "citation"),
+            store_documents=data.get("store_documents", True),  # Default to True for backward compatibility
         )
-        instance.documents = data["documents"]
+        instance.documents = data.get("documents", [])
+        instance.doc_ids = data.get("doc_ids", [])
         instance._tokenized_corpus = data["tokenized_corpus"]
         instance.index = BM25Okapi(instance._tokenized_corpus)
 
