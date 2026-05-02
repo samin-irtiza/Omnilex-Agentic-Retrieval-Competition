@@ -9,6 +9,27 @@ authors = [
     {name = "Omnilex Team"}
 ]
 keywords = ["legal-nlp", "retrieval", "swiss-law", "kaggle-competition"]
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "pydantic>=2.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.35.0",
+    "llama-cpp-python>=0.2.0",
+    "rank-bm25>=0.2.2",
+    "faiss-cpu>=1.7.4",
+    "sentence-transformers>=2.2.2",
+    "FlagEmbedding>=1.2.0",
+    "datasets>=2.14.0",
+    "huggingface-hub>=0.17.0",
+    "scikit-learn>=1.3.0",
+    "jupyter>=1.0.0",
+    "ipykernel>=6.25.0",
+    "ipywidgets>=8.0.0",
+    "tqdm>=4.65.0",
+    "networkx>=3.0.0",
+    "pyyaml>=6.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -31,3 +52,10 @@ addopts = "-v"
 [tool.mypy]
 python_version = "3.10"
 strict = false
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.2",
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]
