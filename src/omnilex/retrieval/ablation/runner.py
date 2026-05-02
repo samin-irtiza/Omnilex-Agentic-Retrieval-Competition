@@ -112,7 +112,9 @@ class ExperimentRunner:
         if corpus_path is None:
             raise ValueError(
                 f"BM25 index initialization failed: {corpus_type}_corpus_path is not configured. "
-                f"Set {corpus_type}_corpus_path in config or preset."
+                f"Set {corpus_type}_corpus_path in config or preset. "
+                f"Current config: laws_corpus_path={self.config.laws_corpus_path}, "
+                f"courts_corpus_path={self.config.courts_corpus_path}"
             )
 
         if not corpus_path.exists():
@@ -334,7 +336,8 @@ class ExperimentRunner:
 
         if self.config.components.get("bm25"):
             # Initialize BM25 index for laws (with cache support)
-            if self._bm25_index is None:
+            # Always ensure index is properly built before searching
+            if self._bm25_index is None or self._bm25_index.index is None:
                 self._bm25_index = self._init_bm25_index("laws")
             results = self._bm25_index.search(query, top_k=self.config.top_k)
             signals["bm25"] = results

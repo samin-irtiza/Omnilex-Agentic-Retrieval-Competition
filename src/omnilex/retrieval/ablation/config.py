@@ -22,6 +22,9 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_dense_only": {
         "name": "exp_dense_only",
@@ -34,6 +37,9 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_bm25_dense": {
         "name": "exp_bm25_dense",
@@ -46,6 +52,9 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_full_retrieval": {
         "name": "exp_full_retrieval",
@@ -58,6 +67,9 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_full_rrf": {
         "name": "exp_full_rrf",
@@ -70,6 +82,9 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_full_reranker": {
         "name": "exp_full_reranker",
@@ -82,6 +97,9 @@ EXPERIMENT_PRESETS = {
             "reranker": True,
             "verifier": False,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
     "exp_full_pipeline": {
         "name": "exp_full_pipeline",
@@ -94,6 +112,9 @@ EXPERIMENT_PRESETS = {
             "reranker": True,
             "verifier": True,
         },
+        "laws_corpus_path": None,
+        "courts_corpus_path": None,
+        "index_cache_dir": None,
     },
 }
 
