@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import tempfile
 from pathlib import Path
@@ -16,6 +17,7 @@ from src.omnilex.retrieval.ablation.config import (
 from src.omnilex.retrieval.ablation.metrics import MetricsTracker
 from src.omnilex.retrieval.ablation.reporter import ResultsReporter
 from src.omnilex.retrieval.ablation.runner import ExperimentRunner
+from src.omnilex.retrieval.bm25_index import load_corpus_from_csv
 
 
 # ---- Config Tests ----
@@ -312,3 +314,246 @@ class TestExperimentRunner:
         results = runner.run(queries, ground_truth)
         assert "results" in results
         assert "metrics" in results
+
+
+# ---- BM25 CSV Loading Tests ----
+
+
+class TestLoadCorpusFromCsv:
+    def test_load_basic_csv(self, tmp_path: Path):
+        """Test loading a basic CSV with citation and text columns."""
+        csv_path = tmp_path / "test_corpus.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,This is the text for article 5\n")
+            f.write("BGE 123 II 456,This is a court decision\n")
+
+        documents = load_corpus_from_csv(csv_path)
+        assert len(documents) == 2
+        assert documents[0]["citation"] == "SR 123.1 Art. 5"
+        assert documents[0]["text"] == "This is the text for article 5"
+        assert documents[1]["citation"] == "BGE 123 II 456"
+
+    def test_load_with_max_rows(self, tmp_path: Path):
+        """Test max_rows parameter limits loaded rows."""
+        csv_path = tmp_path / "test_corpus.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,Text 1\n")
+            f.write("SR 123.1 Art. 6,Text 2\n")
+            f.write("SR 123.1 Art. 7,Text 3\n")
+
+        documents = load_corpus_from_csv(csv_path, max_rows=2)
+        assert len(documents) == 2
+        assert documents[1]["citation"] == "SR 123.1 Art. 6"
+
+    def test_load_with_custom_columns(self, tmp_path: Path):
+        """Test loading with custom column names."""
+        csv_path = tmp_path / "test_corpus.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("doc_id,content\n")
+            f.write("SR 123.1 Art. 5,Some content here\n")
+
+        documents = load_corpus_from_csv(
+            csv_path, citation_col="doc_id", text_col="content"
+        )
+        assert len(documents) == 1
+        assert documents[0]["citation"] == "SR 123.1 Art. 5"
+        assert documents[0]["text"] == "Some content here"
+
+    def test_load_missing_columns(self, tmp_path: Path):
+        """Test handling of missing columns (should return empty string)."""
+        csv_path = tmp_path / "test_corpus.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,other\n")
+            f.write("SR 123.1 Art. 5,some other data\n")
+
+        documents = load_corpus_from_csv(csv_path, text_col="nonexistent")
+        assert len(documents) == 1
+        assert documents[0]["citation"] == "SR 123.1 Art. 5"
+        assert documents[0]["text"] == ""  # Missing column returns empty string
+
+    def test_load_empty_csv(self, tmp_path: Path):
+        """Test loading an empty CSV (only headers)."""
+        csv_path = tmp_path / "test_corpus.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+
+        documents = load_corpus_from_csv(csv_path)
+        assert len(documents) == 0
+
+    def test_load_nonexistent_file(self):
+        """Test that loading a nonexistent file raises an error."""
+        with pytest.raises(FileNotFoundError):
+            load_corpus_from_csv("/nonexistent/path.csv")
+
+
+# ---- Runner BM25 Index Initialization Tests ----
+
+
+class TestRunnerBM25Init:
+    """Tests for ExperimentRunner BM25 index initialization."""
+
+    def test_init_laws_index_fast_path(self, tmp_path: Path):
+        """Test loading pre-built index from cache (fast path)."""
+        # Create a test CSV
+        csv_path = tmp_path / "laws_de.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,Law text 1\n")
+            f.write("SR 123.1 Art. 6,Law text 2\n")
+
+        # Create config with paths
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            laws_corpus_path=str(csv_path),
+            index_cache_dir=str(tmp_path / "cache"),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        # First call should build and cache
+        index = runner._init_bm25_index("laws")
+        assert index is not None
+        assert len(index.documents) == 2
+
+        # Verify cache was created
+        cache_path = tmp_path / "cache" / "bm25_laws.pkl"
+        assert cache_path.exists()
+
+        # Second call should load from cache (fast path)
+        # Create a new runner to test loading from cache
+        runner2 = ExperimentRunner(config, output_dir=tmp_path)
+        index2 = runner2._init_bm25_index("laws")
+        assert index2 is not None
+        assert len(index2.documents) == 2
+
+    def test_init_laws_index_slow_path(self, tmp_path: Path):
+        """Test building index from CSV when no cache exists (slow path)."""
+        # Create a test CSV
+        csv_path = tmp_path / "laws_de.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,Law text 1\n")
+            f.write("SR 123.1 Art. 6,Law text 2\n")
+
+        # Create config without cache dir (slow path only)
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            laws_corpus_path=str(csv_path),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        # Should build from CSV
+        index = runner._init_bm25_index("laws")
+        assert index is not None
+        assert len(index.documents) == 2
+
+        # Test search works
+        results = index.search("Law text", top_k=10)
+        assert len(results) > 0
+
+    def test_init_courts_index(self, tmp_path: Path):
+        """Test initializing courts BM25 index."""
+        # Create a test CSV for courts
+        csv_path = tmp_path / "court_considerations.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("BGE 123 II 456,Court text 1\n")
+            f.write("BGE 124 II 789,Court text 2\n")
+
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            courts_corpus_path=str(csv_path),
+            index_cache_dir=str(tmp_path / "cache"),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        # Initialize courts index
+        index = runner._init_bm25_index("courts")
+        assert index is not None
+        assert len(index.documents) == 2
+
+        # Test search works
+        results = index.search("Court text", top_k=10)
+        assert len(results) > 0
+
+    def test_init_both_indices(self, tmp_path: Path):
+        """Test that both laws and courts indices can be initialized independently."""
+        # Create test CSVs
+        laws_csv = tmp_path / "laws_de.csv"
+        with open(laws_csv, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,Law text\n")
+
+        courts_csv = tmp_path / "court_considerations.csv"
+        with open(courts_csv, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("BGE 123 II 456,Court text\n")
+
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            laws_corpus_path=str(laws_csv),
+            courts_corpus_path=str(courts_csv),
+            index_cache_dir=str(tmp_path / "cache"),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        # Initialize both indices
+        laws_index = runner._init_bm25_index("laws")
+        courts_index = runner._init_bm25_index("courts")
+
+        assert laws_index is not None
+        assert courts_index is not None
+        assert len(laws_index.documents) == 1
+        assert len(courts_index.documents) == 1
+
+    def test_missing_corpus_path_raises_error(self, tmp_path: Path):
+        """Test that missing corpus path raises a clear error."""
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            # No laws_corpus_path set
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        with pytest.raises(ValueError) as exc_info:
+            runner._init_bm25_index("laws")
+        assert "laws_corpus_path is not configured" in str(exc_info.value)
+
+    def test_nonexistent_corpus_file_raises_error(self, tmp_path: Path):
+        """Test that nonexistent corpus file raises an error."""
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            laws_corpus_path=str(tmp_path / "nonexistent.csv"),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            runner._init_bm25_index("laws")
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_run_retrieval_with_bm25(self, tmp_path: Path):
+        """Test that _run_retrieval works with BM25 initialization."""
+        # Create a test CSV
+        csv_path = tmp_path / "laws_de.csv"
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("citation,text\n")
+            f.write("SR 123.1 Art. 5,Law text about something\n")
+
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            laws_corpus_path=str(csv_path),
+            index_cache_dir=str(tmp_path / "cache"),
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        # Run retrieval
+        signals = runner._run_retrieval("something", "q1")
+        assert "bm25" in signals
+        assert len(signals["bm25"]) > 0

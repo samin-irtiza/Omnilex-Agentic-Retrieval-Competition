@@ -114,6 +114,9 @@ class ExperimentConfig:
         fusion_top_k: int = 20,
         reranker_top_k: int = 10,
         verifier_threshold: float = 0.5,
+        laws_corpus_path: str | Path | None = None,
+        courts_corpus_path: str | Path | None = None,
+        index_cache_dir: str | Path | None = None,
     ):
         """Initialize experiment config.
 
@@ -129,6 +132,9 @@ class ExperimentConfig:
             fusion_top_k: After fusion top_k
             reranker_top_k: After reranking top_k
             verifier_threshold: Verifier score threshold
+            laws_corpus_path: Path to laws corpus CSV file
+            courts_corpus_path: Path to courts corpus CSV file
+            index_cache_dir: Directory for caching built indices
         """
         self.name = name
         self.description = description
@@ -141,6 +147,9 @@ class ExperimentConfig:
         self.fusion_top_k = fusion_top_k
         self.reranker_top_k = reranker_top_k
         self.verifier_threshold = verifier_threshold
+        self.laws_corpus_path = Path(laws_corpus_path) if laws_corpus_path else None
+        self.courts_corpus_path = Path(courts_corpus_path) if courts_corpus_path else None
+        self.index_cache_dir = Path(index_cache_dir) if index_cache_dir else None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ExperimentConfig:
@@ -172,6 +181,9 @@ class ExperimentConfig:
             fusion_top_k=config_dict.get("fusion_top_k", 20),
             reranker_top_k=config_dict.get("reranker_top_k", 10),
             verifier_threshold=config_dict.get("verifier_threshold", 0.5),
+            laws_corpus_path=config_dict.get("laws_corpus_path"),
+            courts_corpus_path=config_dict.get("courts_corpus_path"),
+            index_cache_dir=config_dict.get("index_cache_dir"),
         )
 
         errors = instance.validate()
@@ -203,6 +215,9 @@ class ExperimentConfig:
             name=preset["name"],
             description=preset["description"],
             components=preset["components"],
+            laws_corpus_path=preset.get("laws_corpus_path"),
+            courts_corpus_path=preset.get("courts_corpus_path"),
+            index_cache_dir=preset.get("index_cache_dir"),
         )
 
     def validate(self) -> list[str]:
@@ -224,6 +239,24 @@ class ExperimentConfig:
         if self.verifier_threshold < 0 or self.verifier_threshold > 1:
             errors.append("verifier_threshold must be between 0 and 1")
 
+        # Warn if BM25 is enabled but corpus paths are not configured
+        if self.components.get("bm25"):
+            if not self.laws_corpus_path:
+                logger.warning(
+                    "BM25 is enabled but laws_corpus_path is not configured. "
+                    "Set laws_corpus_path in config or preset."
+                )
+            if not self.courts_corpus_path:
+                logger.warning(
+                    "BM25 is enabled but courts_corpus_path is not configured. "
+                    "Set courts_corpus_path in config or preset."
+                )
+            if not self.index_cache_dir:
+                logger.warning(
+                    "index_cache_dir is not configured. "
+                    "BM25 indices will be built from scratch each run."
+                )
+
         return errors
 
     def to_dict(self) -> dict:
@@ -244,4 +277,7 @@ class ExperimentConfig:
             "fusion_top_k": self.fusion_top_k,
             "reranker_top_k": self.reranker_top_k,
             "verifier_threshold": self.verifier_threshold,
+            "laws_corpus_path": str(self.laws_corpus_path) if self.laws_corpus_path else None,
+            "courts_corpus_path": str(self.courts_corpus_path) if self.courts_corpus_path else None,
+            "index_cache_dir": str(self.index_cache_dir) if self.index_cache_dir else None,
         }

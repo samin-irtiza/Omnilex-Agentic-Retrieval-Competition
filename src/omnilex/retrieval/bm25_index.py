@@ -101,15 +101,16 @@ class BM25Index:
         # Get BM25 scores
         scores = self.index.get_scores(query_tokens)
 
-        # Get top-k indices
-        top_indices = scores.argsort()[-top_k:][::-1]
+        # Get top-k indices (highest scores first)
+        if len(scores) <= top_k:
+            top_indices = scores.argsort()[::-1]
+        else:
+            top_k = min(top_k, len(scores))
+            top_indices = scores.argsort()[-top_k:][::-1]
 
         # Build results
         results = []
         for idx in top_indices:
-            if scores[idx] <= 0:
-                continue
-
             doc = self.documents[idx].copy()
             if return_scores:
                 doc["_score"] = float(scores[idx])
@@ -240,3 +241,40 @@ def save_jsonl_corpus(documents: list[dict], path: Path | str) -> None:
     with open(path, "w", encoding="utf-8") as f:
         for doc in documents:
             f.write(json.dumps(doc, ensure_ascii=False) + "\n")
+
+
+def load_corpus_from_csv(
+    path: Path | str,
+    citation_col: str = "citation",
+    text_col: str = "text",
+    max_rows: int | None = None,
+) -> list[dict]:
+    """Load a corpus from a CSV file.
+
+    Args:
+        path: Path to CSV file
+        citation_col: Column name for citation field
+        text_col: Column name for text field
+        max_rows: Maximum number of rows to load (for testing)
+
+    Returns:
+        List of document dictionaries with 'citation' and 'text' keys
+    """
+    import csv
+
+    path = Path(path)
+    documents = []
+
+    with open(path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            if max_rows is not None and i >= max_rows:
+                break
+            documents.append(
+                {
+                    "citation": row.get(citation_col, ""),
+                    "text": row.get(text_col, ""),
+                }
+            )
+
+    return documents

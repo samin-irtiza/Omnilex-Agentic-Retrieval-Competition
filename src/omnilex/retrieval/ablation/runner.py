@@ -43,6 +43,7 @@ class ExperimentRunner:
 
         # Pipeline components (lazily initialized)
         self._bm25_index = None
+        self._bm25_courts_index = None  # Separate index for courts corpus
         self._dense_index = None
         self._graph_index = None
         self._reranker = None
@@ -82,6 +83,75 @@ class ExperimentRunner:
                 logger.warning(f"Unexpected ground truth format: {type(doc)} - {doc}")
                 gold_ids.append(str(doc))
         return gold_ids
+
+    def _init_bm25_index(self, corpus_type: str) -> BM25Index:
+        """Initialize BM25 index for a given corpus type.
+
+        Checks for pre-built index cache first, then builds from CSV if needed.
+
+        Args:
+            corpus_type: Either "laws" or "courts"
+
+        Returns:
+            Initialized BM25Index
+
+        Raises:
+            ValueError: If corpus paths are not configured or CSV file not found
+        """
+        # Determine paths based on corpus type
+        if corpus_type == "laws":
+            corpus_path = self.config.laws_corpus_path
+        elif corpus_type == "courts":
+            corpus_path = self.config.courts_corpus_path
+        else:
+            raise ValueError(
+                f"Unknown corpus_type: {corpus_type}. Must be 'laws' or 'courts'."
+            )
+
+        # Check if corpus path is configured
+        if corpus_path is None:
+            raise ValueError(
+                f"BM25 index initialization failed: {corpus_type}_corpus_path is not configured. "
+                f"Set {corpus_type}_corpus_path in config or preset."
+            )
+
+        if not corpus_path.exists():
+            raise FileNotFoundError(
+                f"Corpus file not found: {corpus_path}. "
+                f"Please check the {corpus_type}_corpus_path configuration."
+            )
+
+        # Determine cache path
+        cache_path = None
+        if self.config.index_cache_dir is not None:
+            self.config.index_cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_path = self.config.index_cache_dir / f"bm25_{corpus_type}.pkl"
+
+        # Fast path: load from cache if exists
+        if cache_path and cache_path.exists():
+            logger.info(f"Loading cached BM25 index from {cache_path}")
+            try:
+                return BM25Index.load(cache_path)
+            except Exception as e:
+                logger.warning(f"Failed to load cached index: {e}. Rebuilding...")
+
+        # Slow path: build from CSV
+        logger.info(f"Building BM25 index from {corpus_path}")
+        from src.omnilex.retrieval.bm25_index import load_corpus_from_csv
+
+        documents = load_corpus_from_csv(corpus_path)
+        if not documents:
+            logger.warning(f"No documents loaded from {corpus_path}")
+
+        index = BM25Index()
+        index.build(documents)
+
+        # Save to cache
+        if cache_path:
+            logger.info(f"Saving BM25 index to cache: {cache_path}")
+            index.save(cache_path)
+
+        return index
 
     def run(
         self,
@@ -263,11 +333,10 @@ class ExperimentRunner:
         signals = {}
 
         if self.config.components.get("bm25"):
-            index = self._get_or_create_index(
-                "_bm25_index",
-                BM25Index,
-            )
-            results = index.search(query, top_k=self.config.top_k)
+            # Initialize BM25 index for laws (with cache support)
+            if self._bm25_index is None:
+                self._bm25_index = self._init_bm25_index("laws")
+            results = self._bm25_index.search(query, top_k=self.config.top_k)
             signals["bm25"] = results
 
         if self.config.components.get("dense"):
@@ -280,11 +349,16 @@ class ExperimentRunner:
             signals["dense"] = results
 
         if self.config.components.get("graph"):
-            index = self._get_or_create_index(
-                "_graph_index",
-                CitationGraph,
-            )
-            results = index.search(query, top_k=self.config.top_k)
+            # Initialize graph index (may also need courts BM25 index)
+            if self._graph_index is None:
+                # Graph index may require courts corpus for citation lookups
+                if self._bm25_courts_index is None:
+                    self._bm25_courts_index = self._init_bm25_index("courts")
+                self._graph_index = self._get_or_create_index(
+                    "_graph_index",
+                    CitationGraph,
+                )
+            results = self._graph_index.search(query, top_k=self.config.top_k)
             signals["graph"] = results
 
         return signals
