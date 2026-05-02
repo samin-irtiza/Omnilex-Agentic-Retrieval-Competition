@@ -45,16 +45,55 @@ class ExperimentRunner:
         self._verifier = None
         self._fusion = None
 
+    def _normalize_gold_ids(self, gold_docs: list) -> list[str]:
+        """Normalize ground truth documents to list of citation strings.
+
+        Handles multiple formats:
+        - List of strings: ["SR 123.1 Art. 5"]
+        - List of dicts with "id" key: [{"id": "SR 123.1 Art. 5"}]
+        - List of dicts with "citation" key: [{"citation": "SR 123.1 Art. 5"}]
+
+        Args:
+            gold_docs: List of ground truth documents in various formats
+
+        Returns:
+            List of citation strings
+        """
+        gold_ids = []
+        for doc in gold_docs:
+            if isinstance(doc, str):
+                gold_ids.append(doc)
+            elif isinstance(doc, dict):
+                # Try "id" key first, then "citation" as fallback
+                doc_id = doc.get("id")
+                if doc_id is None:
+                    doc_id = doc.get("citation")
+                if doc_id is None:
+                    logger.warning(
+                        f"Ground truth doc has neither 'id' nor 'citation' key: {doc}"
+                    )
+                    doc_id = ""
+                gold_ids.append(doc_id)
+            else:
+                logger.warning(f"Unexpected ground truth format: {type(doc)} - {doc}")
+                gold_ids.append(str(doc))
+        return gold_ids
+
     def run(
         self,
         queries: list[dict],
-        ground_truth: dict | None = None,
+        ground_truth: dict[str, list] | None = None,
     ) -> dict:
         """Run experiment pipeline.
 
         Args:
             queries: List of query dicts with 'id', 'query', 'citations' keys
-            ground_truth: Optional dict mapping query_id to gold citations
+            ground_truth: Optional dict mapping query_id to gold citations.
+                Accepted formats for gold citations:
+                - List of strings: ["SR 123.1 Art. 5", "BGE 123 II 456"]
+                - List of dicts with "id" key: [{"id": "SR 123.1 Art. 5"}]
+                - List of dicts with "citation" key: [{"citation": "SR 123.1 Art. 5"}]
+                - Mixed formats are also supported
 
         Returns:
             Dict with results and metrics
@@ -70,7 +109,7 @@ class ExperimentRunner:
 
             # Track retrieval metrics if ground truth exists
             if ground_truth and query_id in ground_truth:
-                gold_ids = [doc.get("id", "") for doc in ground_truth[query_id]]
+                gold_ids = self._normalize_gold_ids(ground_truth[query_id])
                 retrieved_ids = []
                 for sig_docs in signals.values():
                     retrieved_ids.extend([doc.get("id", "") for doc in sig_docs[:50]])
@@ -87,7 +126,7 @@ class ExperimentRunner:
                 reranked = self._run_reranker(query_text, fused)
                 # Track reranker metrics
                 if ground_truth and query_id in ground_truth:
-                    gold_ids = [doc.get("id", "") for doc in ground_truth[query_id]]
+                    gold_ids = self._normalize_gold_ids(ground_truth[query_id])
                     reranked_ids = [doc.get("id", "") for doc in reranked]
                     self.metrics.track_reranker(query_id, reranked_ids, gold_ids)
             else:
@@ -98,7 +137,7 @@ class ExperimentRunner:
                 verified = self._run_verifier(query_text, reranked)
                 # Track verifier metrics
                 if ground_truth and query_id in ground_truth:
-                    gold_ids = [doc.get("id", "") for doc in ground_truth[query_id]]
+                    gold_ids = self._normalize_gold_ids(ground_truth[query_id])
                     verified_ids = [doc.get("id", "") for doc in verified]
                     self.metrics.track_verifier(query_id, verified_ids, gold_ids)
             else:

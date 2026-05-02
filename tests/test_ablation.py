@@ -212,3 +212,100 @@ class TestExperimentRunner:
         results = runner.run(queries, ground_truth)
         assert "results" in results
         assert "metrics" in results
+
+    def test_normalize_gold_ids_strings(self):
+        """Test _normalize_gold_ids with list of strings."""
+        config = ExperimentConfig.from_preset("exp_baseline")
+        runner = ExperimentRunner(config)
+
+        gold_docs = ["SR 123.1 Art. 5", "BGE 123 II 456"]
+        result = runner._normalize_gold_ids(gold_docs)
+        assert result == ["SR 123.1 Art. 5", "BGE 123 II 456"]
+
+    def test_normalize_gold_ids_dicts_with_id(self):
+        """Test _normalize_gold_ids with list of dicts with 'id' key."""
+        config = ExperimentConfig.from_preset("exp_baseline")
+        runner = ExperimentRunner(config)
+
+        gold_docs = [{"id": "SR 123.1 Art. 5"}, {"id": "BGE 123 II 456"}]
+        result = runner._normalize_gold_ids(gold_docs)
+        assert result == ["SR 123.1 Art. 5", "BGE 123 II 456"]
+
+    def test_normalize_gold_ids_dicts_with_citation(self):
+        """Test _normalize_gold_ids with list of dicts with 'citation' key."""
+        config = ExperimentConfig.from_preset("exp_baseline")
+        runner = ExperimentRunner(config)
+
+        gold_docs = [{"citation": "SR 123.1 Art. 5"}]
+        result = runner._normalize_gold_ids(gold_docs)
+        assert result == ["SR 123.1 Art. 5"]
+
+    def test_normalize_gold_ids_mixed_format(self):
+        """Test _normalize_gold_ids with mixed formats in same list."""
+        config = ExperimentConfig.from_preset("exp_baseline")
+        runner = ExperimentRunner(config)
+
+        gold_docs = ["SR 123.1 Art. 5", {"id": "BGE 123 II 456"}]
+        result = runner._normalize_gold_ids(gold_docs)
+        assert result == ["SR 123.1 Art. 5", "BGE 123 II 456"]
+
+    def test_normalize_gold_ids_missing_keys(self, caplog):
+        """Test _normalize_gold_ids with dict missing 'id' and 'citation' keys."""
+        config = ExperimentConfig.from_preset("exp_baseline")
+        runner = ExperimentRunner(config)
+
+        gold_docs = [{"foo": "bar"}]
+        result = runner._normalize_gold_ids(gold_docs)
+        assert result == [""]
+        assert "neither 'id' nor 'citation' key" in caplog.text
+
+    def test_run_with_string_ground_truth(self, tmp_path: Path):
+        """Test run() with ground_truth as list of strings."""
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        queries = [{"id": "q1", "query": "test query"}]
+        ground_truth = {
+            "q1": ["SR 123.1 Art. 5", "BGE 123 II 456"],
+        }
+
+        results = runner.run(queries, ground_truth)
+        assert "results" in results
+        assert "metrics" in results
+
+    def test_run_with_mixed_ground_truth(self, tmp_path: Path):
+        """Test run() with ground_truth in mixed format."""
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        queries = [{"id": "q1", "query": "test query"}]
+        ground_truth = {
+            "q1": ["SR 123.1 Art. 5", {"id": "BGE 123 II 456"}],
+        }
+
+        results = runner.run(queries, ground_truth)
+        assert "results" in results
+        assert "metrics" in results
+
+    def test_run_with_citation_key_ground_truth(self, tmp_path: Path):
+        """Test run() with ground_truth using 'citation' key in dicts."""
+        config = ExperimentConfig(
+            name="test",
+            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+        )
+        runner = ExperimentRunner(config, output_dir=tmp_path)
+
+        queries = [{"id": "q1", "query": "test query"}]
+        ground_truth = {
+            "q1": [{"citation": "SR 123.1 Art. 5"}],
+        }
+
+        results = runner.run(queries, ground_truth)
+        assert "results" in results
+        assert "metrics" in results
