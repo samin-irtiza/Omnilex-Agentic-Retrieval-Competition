@@ -108,6 +108,10 @@ class ExperimentRunner:
                 f"Unknown corpus_type: {corpus_type}. Must be 'laws' or 'courts'."
             )
 
+        # Convert to Path if it's a string
+        if corpus_path and isinstance(corpus_path, str):
+            corpus_path = Path(corpus_path)
+
         # Check if corpus path is configured
         if corpus_path is None:
             raise ValueError(

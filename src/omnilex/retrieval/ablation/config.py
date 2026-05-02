@@ -168,9 +168,39 @@ class ExperimentConfig:
         self.fusion_top_k = fusion_top_k
         self.reranker_top_k = reranker_top_k
         self.verifier_threshold = verifier_threshold
-        self.laws_corpus_path = Path(laws_corpus_path) if laws_corpus_path else None
-        self.courts_corpus_path = Path(courts_corpus_path) if courts_corpus_path else None
-        self.index_cache_dir = Path(index_cache_dir) if index_cache_dir else None
+        self._laws_corpus_path = Path(laws_corpus_path) if laws_corpus_path else None
+        self._courts_corpus_path = Path(courts_corpus_path) if courts_corpus_path else None
+        self._index_cache_dir = Path(index_cache_dir) if index_cache_dir else None
+
+    @property
+    def laws_corpus_path(self) -> Path | None:
+        """Get laws corpus path."""
+        return self._laws_corpus_path
+
+    @laws_corpus_path.setter
+    def laws_corpus_path(self, value):
+        """Set laws corpus path, converting string to Path if needed."""
+        self._laws_corpus_path = Path(value) if value else None
+
+    @property
+    def courts_corpus_path(self) -> Path | None:
+        """Get courts corpus path."""
+        return self._courts_corpus_path
+
+    @courts_corpus_path.setter
+    def courts_corpus_path(self, value):
+        """Set courts corpus path, converting string to Path if needed."""
+        self._courts_corpus_path = Path(value) if value else None
+
+    @property
+    def index_cache_dir(self) -> Path | None:
+        """Get index cache directory."""
+        return self._index_cache_dir
+
+    @index_cache_dir.setter
+    def index_cache_dir(self, value):
+        """Set index cache directory, converting string to Path if needed."""
+        self._index_cache_dir = Path(value) if value else None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ExperimentConfig:
@@ -190,6 +220,10 @@ class ExperimentConfig:
             config_dict = yaml.safe_load(f)
 
         # Extract fields with defaults matching __init__ parameters
+        laws_path = config_dict.get("laws_corpus_path")
+        courts_path = config_dict.get("courts_corpus_path")
+        cache_dir = config_dict.get("index_cache_dir")
+
         instance = cls(
             name=config_dict.get("name", ""),
             description=config_dict.get("description", ""),
@@ -202,9 +236,9 @@ class ExperimentConfig:
             fusion_top_k=config_dict.get("fusion_top_k", 20),
             reranker_top_k=config_dict.get("reranker_top_k", 10),
             verifier_threshold=config_dict.get("verifier_threshold", 0.5),
-            laws_corpus_path=config_dict.get("laws_corpus_path"),
-            courts_corpus_path=config_dict.get("courts_corpus_path"),
-            index_cache_dir=config_dict.get("index_cache_dir"),
+            laws_corpus_path=Path(laws_path) if laws_path else None,
+            courts_corpus_path=Path(courts_path) if courts_path else None,
+            index_cache_dir=Path(cache_dir) if cache_dir else None,
         )
 
         errors = instance.validate()
@@ -232,13 +266,19 @@ class ExperimentConfig:
             )
 
         preset = EXPERIMENT_PRESETS[preset_name]
+        
+        # Get paths and convert to Path objects if they exist
+        laws_path = preset.get("laws_corpus_path")
+        courts_path = preset.get("courts_corpus_path")
+        cache_dir = preset.get("index_cache_dir")
+        
         return cls(
             name=preset["name"],
             description=preset["description"],
             components=preset["components"],
-            laws_corpus_path=preset.get("laws_corpus_path"),
-            courts_corpus_path=preset.get("courts_corpus_path"),
-            index_cache_dir=preset.get("index_cache_dir"),
+            laws_corpus_path=Path(laws_path) if laws_path else None,
+            courts_corpus_path=Path(courts_path) if courts_path else None,
+            index_cache_dir=Path(cache_dir) if cache_dir else None,
         )
 
     def validate(self) -> list[str]:
