@@ -193,6 +193,8 @@ class TestExperimentRunner:
 
     def test_run_mock(self, tmp_path: Path):
         """Test runner with mock queries (no actual retrieval)."""
+        from unittest.mock import patch
+
         config = ExperimentConfig.from_preset("exp_baseline")
         runner = ExperimentRunner(config, output_dir=tmp_path)
 
@@ -208,10 +210,11 @@ class TestExperimentRunner:
             "q2": [{"id": "doc3"}],
         }
 
-        # Run (will use empty results since no actual indices)
-        results = runner.run(queries, ground_truth)
-        assert "results" in results
-        assert "metrics" in results
+        # Mock _run_retrieval to return empty signals (no actual indices needed)
+        with patch.object(runner, "_run_retrieval", return_value={}):
+            results = runner.run(queries, ground_truth)
+            assert "results" in results
+            assert "metrics" in results
 
     def test_normalize_gold_ids_strings(self):
         """Test _normalize_gold_ids with list of strings."""

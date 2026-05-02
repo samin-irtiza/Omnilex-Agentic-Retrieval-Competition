@@ -8,8 +8,12 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from omnilex.citations.normalizer import CitationNormalizer
+from omnilex.retrieval.bm25_index import BM25Index
+from omnilex.retrieval.dense_index import DenseIndex
+from omnilex.retrieval.graph_index import CitationGraph
 
 from .config import ExperimentConfig
 from .metrics import MetricsTracker
@@ -218,6 +222,30 @@ class ExperimentRunner:
 
         return unique_docs
 
+    def _get_or_create_index(
+        self,
+        attr_name: str,
+        cls: type,
+        *args,
+        **kwargs,
+    ) -> Any:
+        """Get existing index or create if None (lazy init).
+
+        Args:
+            attr_name: Name of the instance attribute (e.g., '_bm25_index')
+            cls: Class to instantiate if attribute is None
+            *args: Positional arguments for class constructor
+            **kwargs: Keyword arguments for class constructor
+
+        Returns:
+            The index object (existing or newly created)
+        """
+        current = getattr(self, attr_name)
+        if current is None:
+            current = cls(*args, **kwargs)
+            setattr(self, attr_name, current)
+        return current
+
     def _run_retrieval(
         self,
         query: str,
@@ -235,27 +263,28 @@ class ExperimentRunner:
         signals = {}
 
         if self.config.components.get("bm25"):
-            if self._bm25_index is None:
-                from omnilex.retrieval.bm25_index import BM25Index
-
-                self._bm25_index = BM25Index()
-            results = self._bm25_index.search(query, top_k=self.config.top_k)
+            index = self._get_or_create_index(
+                "_bm25_index",
+                BM25Index,
+            )
+            results = index.search(query, top_k=self.config.top_k)
             signals["bm25"] = results
 
         if self.config.components.get("dense"):
-            if self._dense_index is None:
-                from omnilex.retrieval.dense_index import DenseIndex
-
-                self._dense_index = DenseIndex(index_preset=self.config.dense_index_preset)
-            results = self._dense_index.search(query, top_k=self.config.top_k)
+            index = self._get_or_create_index(
+                "_dense_index",
+                DenseIndex,
+                index_preset=self.config.dense_index_preset,
+            )
+            results = index.search(query, top_k=self.config.top_k)
             signals["dense"] = results
 
         if self.config.components.get("graph"):
-            if self._graph_index is None:
-                from omnilex.retrieval.graph_index import CitationGraph
-
-                self._graph_index = CitationGraph()
-            results = self._graph_index.search(query, top_k=self.config.top_k)
+            index = self._get_or_create_index(
+                "_graph_index",
+                CitationGraph,
+            )
+            results = index.search(query, top_k=self.config.top_k)
             signals["graph"] = results
 
         return signals
