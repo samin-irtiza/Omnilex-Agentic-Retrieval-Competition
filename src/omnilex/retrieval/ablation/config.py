@@ -49,12 +49,12 @@ EXPERIMENT_PRESETS = {
     },
     "exp_full_retrieval": {
         "name": "exp_full_retrieval",
-        "description": "BM25 + Dense + Graph with RRF",
+        "description": "BM25 + Dense + Graph retrieval (no fusion)",
         "components": {
             "bm25": True,
             "dense": True,
             "graph": True,
-            "rrf_fusion": True,
+            "rrf_fusion": False,
             "reranker": False,
             "verifier": False,
         },
