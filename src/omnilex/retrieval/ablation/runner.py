@@ -44,6 +44,7 @@ class ExperimentRunner:
         # Pipeline components (lazily initialized)
         self._bm25_index = None
         self._bm25_courts_index = None  # Separate index for courts corpus
+        self._bm25_non_leading_index = None  # Separate index for non-leading decisions
         self._dense_index = None
         self._graph_index = None
         self._reranker = None
@@ -74,9 +75,7 @@ class ExperimentRunner:
                 if doc_id is None:
                     doc_id = doc.get("citation")
                 if doc_id is None:
-                    logger.warning(
-                        f"Ground truth doc has neither 'id' nor 'citation' key: {doc}"
-                    )
+                    logger.warning(f"Ground truth doc has neither 'id' nor 'citation' key: {doc}")
                     doc_id = ""
                 gold_ids.append(doc_id)
             else:
@@ -87,25 +86,27 @@ class ExperimentRunner:
     def _init_bm25_index(self, corpus_type: str) -> BM25Index:
         """Initialize BM25 index for a given corpus type.
 
-        Checks for pre-built index cache first, then builds from CSV if needed.
+        Checks for pre-built index cache first, then builds from CSV/JSONL if needed.
 
         Args:
-            corpus_type: Either "laws" or "courts"
+            corpus_type: One of "laws", "courts", or "non_leading"
 
         Returns:
             Initialized BM25Index
 
         Raises:
-            ValueError: If corpus paths are not configured or CSV file not found
+            ValueError: If corpus paths are not configured or file not found
         """
         # Determine paths based on corpus type
         if corpus_type == "laws":
             corpus_path = self.config.laws_corpus_path
         elif corpus_type == "courts":
             corpus_path = self.config.courts_corpus_path
+        elif corpus_type == "non_leading":
+            corpus_path = self.config.non_leading_corpus_path
         else:
             raise ValueError(
-                f"Unknown corpus_type: {corpus_type}. Must be 'laws' or 'courts'."
+                f"Unknown corpus_type: {corpus_type}. Must be 'laws', 'courts', or 'non_leading'."
             )
 
         # Convert to Path if it's a string
@@ -133,6 +134,9 @@ class ExperimentRunner:
             self.config.index_cache_dir.mkdir(parents=True, exist_ok=True)
             cache_path = self.config.index_cache_dir / f"bm25_{corpus_type}.pkl"
 
+        # Get use_german_stemming from config
+        use_stemming = self.config.use_german_stemming
+
         # Fast path: load from cache if exists
         if cache_path and cache_path.exists():
             logger.info(f"Loading cached BM25 index from {cache_path}")
@@ -141,15 +145,22 @@ class ExperimentRunner:
             except Exception as e:
                 logger.warning(f"Failed to load cached index: {e}. Rebuilding...")
 
-        # Slow path: build from CSV
+        # Slow path: build from CSV or JSONL
         logger.info(f"Building BM25 index from {corpus_path}")
-        from src.omnilex.retrieval.bm25_index import load_corpus_from_csv
 
-        documents = load_corpus_from_csv(corpus_path)
+        if corpus_path.suffix == ".jsonl":
+            from omnilex.retrieval.bm25_index import load_jsonl_corpus
+
+            documents = load_jsonl_corpus(corpus_path)
+        else:
+            from omnilex.retrieval.bm25_index import load_corpus_from_csv
+
+            documents = load_corpus_from_csv(corpus_path)
+
         if not documents:
             logger.warning(f"No documents loaded from {corpus_path}")
 
-        index = BM25Index()
+        index = BM25Index(use_german_stemming=use_stemming)
         index.build(documents)
 
         # Save to cache
@@ -339,12 +350,24 @@ class ExperimentRunner:
         signals = {}
 
         if self.config.components.get("bm25"):
-            # Initialize BM25 index for laws (with cache support)
-            # Always ensure index is properly built before searching
+            # Initialize ALL three BM25 indices when bm25=True
+            # 1. Laws index
             if self._bm25_index is None or self._bm25_index.index is None:
                 self._bm25_index = self._init_bm25_index("laws")
             results = self._bm25_index.search(query, top_k=self.config.top_k)
-            signals["bm25"] = results
+            signals["bm25_laws"] = results
+
+            # 2. Courts index (leading BGE decisions) - NOT gated behind graph=True
+            if self._bm25_courts_index is None or self._bm25_courts_index.index is None:
+                self._bm25_courts_index = self._init_bm25_index("courts")
+            results = self._bm25_courts_index.search(query, top_k=self.config.top_k)
+            signals["bm25_courts"] = results
+
+            # 3. Non-leading decisions index
+            if self._bm25_non_leading_index is None or self._bm25_non_leading_index.index is None:
+                self._bm25_non_leading_index = self._init_bm25_index("non_leading")
+            results = self._bm25_non_leading_index.search(query, top_k=self.config.top_k)
+            signals["bm25_non_leading"] = results
 
         if self.config.components.get("dense"):
             index = self._get_or_create_index(
@@ -358,7 +381,8 @@ class ExperimentRunner:
         if self.config.components.get("graph"):
             # Initialize graph index (may also need courts BM25 index)
             if self._graph_index is None:
-                # Graph index may require courts corpus for citation lookups
+                # Courts index should already be initialized if bm25=True
+                # If not, initialize it now for graph citation lookups
                 if self._bm25_courts_index is None:
                     self._bm25_courts_index = self._init_bm25_index("courts")
                 self._graph_index = self._get_or_create_index(

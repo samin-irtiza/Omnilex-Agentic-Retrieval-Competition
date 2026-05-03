@@ -7,6 +7,149 @@ from pathlib import Path
 
 from rank_bm25 import BM25Okapi
 
+# 86 German stopwords from Hybrid GraphRAG paper
+GERMAN_STOPWORDS = {
+    "ab",
+    "aber",
+    "alle",
+    "allem",
+    "allen",
+    "aller",
+    "alles",
+    "als",
+    "also",
+    "am",
+    "an",
+    "ander",
+    "andere",
+    "anderem",
+    "anderen",
+    "anderer",
+    "anderes",
+    "auch",
+    "auf",
+    "aus",
+    "bei",
+    "bin",
+    "bis",
+    "bist",
+    "da",
+    "damit",
+    "dann",
+    "der",
+    "den",
+    "des",
+    "dem",
+    "die",
+    "das",
+    "daß",
+    "dazu",
+    "dein",
+    "deine",
+    "deinem",
+    "deinen",
+    "deiner",
+    "deines",
+    "dem",
+    "denn",
+    "derer",
+    "dessen",
+    "dich",
+    "dies",
+    "diese",
+    "diesem",
+    "diesen",
+    "dieser",
+    "dieses",
+    "dir",
+    "doch",
+    "dort",
+    "du",
+    "durch",
+    "ein",
+    "eine",
+    "einem",
+    "einen",
+    "einer",
+    "eines",
+    "einmal",
+    "er",
+    "es",
+    "etwas",
+    "für",
+    "gegen",
+    "gewesen",
+    "hab",
+    "habe",
+    "haben",
+    "hat",
+    "hatte",
+    "hatten",
+    "hier",
+    "hin",
+    "hinter",
+    "ich",
+    "mich",
+    "mir",
+    "mit",
+    "nach",
+    "nicht",
+    "noch",
+    "oder",
+    "seid",
+    "sein",
+    "seine",
+    "seinem",
+    "seinen",
+    "seiner",
+    "seines",
+    "selbst",
+    "sich",
+    "sie",
+    "sind",
+    "so",
+    "solche",
+    "solchem",
+    "solchen",
+    "solcher",
+    "solches",
+    "soll",
+    "sollen",
+    "sollte",
+    "sondern",
+    "sonst",
+    "um",
+    "und",
+    "uns",
+    "unser",
+    "unsere",
+    "unserem",
+    "unseren",
+    "unserer",
+    "unseres",
+    "unter",
+    "viel",
+    "vom",
+    "von",
+    "vor",
+    "während",
+    "wieder",
+    "will",
+    "wir",
+    "wird",
+    "wirst",
+    "wo",
+    "wollen",
+    "wollte",
+    "würde",
+    "würden",
+    "zu",
+    "zum",
+    "zur",
+    "zwar",
+    "zwischen",
+}
+
 
 class BM25Index:
     """BM25 index for keyword search over legal documents.
@@ -19,6 +162,7 @@ class BM25Index:
         documents: list[dict] | None = None,
         text_field: str = "text",
         citation_field: str = "citation",
+        use_german_stemming: bool = False,
     ):
         """Initialize BM25 index.
 
@@ -26,13 +170,22 @@ class BM25Index:
             documents: List of document dictionaries
             text_field: Key for document text in dict
             citation_field: Key for citation string in dict
+            use_german_stemming: Whether to apply German Snowball stemming
         """
         self.text_field = text_field
         self.citation_field = citation_field
+        self.use_german_stemming = use_german_stemming
 
         self.documents: list[dict] = []
         self.index: BM25Okapi | None = None
         self._tokenized_corpus: list[list[str]] = []
+
+        # Initialize German stemmer if needed
+        self._stemmer = None
+        if use_german_stemming:
+            from snowballstemmer import GermanStemmer
+
+            self._stemmer = GermanStemmer()
 
         if documents:
             self.build(documents)
@@ -40,8 +193,12 @@ class BM25Index:
     def tokenize(self, text: str) -> list[str]:
         """Tokenize text for BM25 indexing.
 
-        Simple whitespace + lowercase tokenization.
-        Can be overridden for language-specific tokenization.
+        Implements 5-step pipeline matching Hybrid GraphRAG paper:
+        1. Lowercase conversion
+        2. Split on non-alphanumeric characters
+        3. Remove German stopwords (if stemming enabled)
+        4. Discard single-character tokens
+        5. Apply Snowball stemming (if enabled)
 
         Args:
             text: Text to tokenize
@@ -49,11 +206,27 @@ class BM25Index:
         Returns:
             List of tokens
         """
-        # Lowercase and split on non-alphanumeric characters
+        # Step 1: Lowercase
         text = text.lower()
+
+        # Step 2: Split on non-alphanumeric characters
         tokens = re.split(r"\W+", text)
+
         # Filter empty tokens
-        return [t for t in tokens if t]
+        tokens = [t for t in tokens if t]
+
+        # Step 3: Remove German stopwords (only when stemming is enabled)
+        if self.use_german_stemming and self._stemmer:
+            tokens = [t for t in tokens if t not in GERMAN_STOPWORDS]
+
+        # Step 4: Discard single-character tokens
+        tokens = [t for t in tokens if len(t) > 1]
+
+        # Step 5: Apply Snowball stemming (if enabled)
+        if self.use_german_stemming and self._stemmer:
+            tokens = [self._stemmer.stemWord(t) for t in tokens]
+
+        return tokens
 
     def build(self, documents: list[dict]) -> None:
         """Build BM25 index from documents.
@@ -132,6 +305,7 @@ class BM25Index:
             "tokenized_corpus": self._tokenized_corpus,
             "text_field": self.text_field,
             "citation_field": self.citation_field,
+            "use_german_stemming": self.use_german_stemming,
         }
 
         with open(path, "wb") as f:
@@ -152,9 +326,11 @@ class BM25Index:
         with open(path, "rb") as f:
             data = pickle.load(f)
 
+        use_german_stemming = data.get("use_german_stemming", False)
         instance = cls(
             text_field=data["text_field"],
             citation_field=data.get("citation_field", "citation"),
+            use_german_stemming=use_german_stemming,
         )
         instance.documents = data["documents"]
         instance._tokenized_corpus = data["tokenized_corpus"]

@@ -24,7 +24,6 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import List, Set
 
 import pandas as pd
 
@@ -49,7 +48,7 @@ def _canonicalize_citation(c: str) -> str:
     return c
 
 
-def _parse_citation_field(value: object, sep: str, max_items: int, max_chars: int) -> Set[str]:
+def _parse_citation_field(value: object, sep: str, max_items: int, max_chars: int) -> set[str]:
     """
     Parse a semicolon-separated citation string into a canonicalized set.
     """
@@ -74,7 +73,7 @@ def _parse_citation_field(value: object, sep: str, max_items: int, max_chars: in
             f"Please limit to <= {max_items} citations per query."
         )
 
-    out: Set[str] = set()
+    out: set[str] = set()
     for p in parts:
         canon = _canonicalize_citation(p)
         if canon:
@@ -82,7 +81,7 @@ def _parse_citation_field(value: object, sep: str, max_items: int, max_chars: in
     return out
 
 
-def _f1_for_sets(pred: Set[str], gold: Set[str]) -> float:
+def _f1_for_sets(pred: set[str], gold: set[str]) -> float:
     """Compute F1 score between two sets."""
     if not pred and not gold:
         return 1.0
@@ -170,7 +169,7 @@ def score(
             "Solution and submission have different number of rows after alignment."
         )
 
-    f1s: List[float] = []
+    f1s: list[float] = []
     for g, p in zip(gold_series.tolist(), pred_series.tolist()):
         gold_set = _parse_citation_field(
             g, citation_separator, max_citations_per_row, max_chars_per_row

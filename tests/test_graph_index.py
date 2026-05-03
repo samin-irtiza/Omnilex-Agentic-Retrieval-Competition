@@ -1,8 +1,6 @@
 """Tests for graph_index.py citation graph module."""
 
-import pickle
 import tempfile
-from pathlib import Path
 
 import pytest
 

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 EXPERIMENT_PRESETS = {
     "exp_baseline": {
         "name": "exp_baseline",
-        "description": "BM25-only baseline",
+        "description": "BM25-only baseline with German stemming",
         "components": {
             "bm25": True,
             "dense": False,
@@ -22,9 +22,11 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_dense_only": {
         "name": "exp_dense_only",
@@ -37,9 +39,11 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_bm25_dense": {
         "name": "exp_bm25_dense",
@@ -52,9 +56,11 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_full_retrieval": {
         "name": "exp_full_retrieval",
@@ -67,9 +73,11 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_full_rrf": {
         "name": "exp_full_rrf",
@@ -82,9 +90,11 @@ EXPERIMENT_PRESETS = {
             "reranker": False,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_full_reranker": {
         "name": "exp_full_reranker",
@@ -97,9 +107,11 @@ EXPERIMENT_PRESETS = {
             "reranker": True,
             "verifier": False,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
     "exp_full_pipeline": {
         "name": "exp_full_pipeline",
@@ -112,9 +124,11 @@ EXPERIMENT_PRESETS = {
             "reranker": True,
             "verifier": True,
         },
-        "laws_corpus_path": None,
-        "courts_corpus_path": None,
-        "index_cache_dir": None,
+        "laws_corpus_path": "data/raw/laws_de.csv",
+        "courts_corpus_path": "data/raw/court_considerations.csv",
+        "non_leading_corpus_path": "data/raw/court_decisions.jsonl",
+        "use_german_stemming": True,
+        "index_cache_dir": "experiments/cache",
     },
 }
 
@@ -137,6 +151,8 @@ class ExperimentConfig:
         verifier_threshold: float = 0.5,
         laws_corpus_path: str | Path | None = None,
         courts_corpus_path: str | Path | None = None,
+        non_leading_corpus_path: str | Path | None = None,
+        use_german_stemming: bool = True,
         index_cache_dir: str | Path | None = None,
     ):
         """Initialize experiment config.
@@ -155,6 +171,8 @@ class ExperimentConfig:
             verifier_threshold: Verifier score threshold
             laws_corpus_path: Path to laws corpus CSV file
             courts_corpus_path: Path to courts corpus CSV file
+            non_leading_corpus_path: Path to non-leading decisions JSONL file
+            use_german_stemming: Whether to use German Snowball stemming for BM25
             index_cache_dir: Directory for caching built indices
         """
         self.name = name
@@ -170,6 +188,10 @@ class ExperimentConfig:
         self.verifier_threshold = verifier_threshold
         self._laws_corpus_path = Path(laws_corpus_path) if laws_corpus_path else None
         self._courts_corpus_path = Path(courts_corpus_path) if courts_corpus_path else None
+        self._non_leading_corpus_path = (
+            Path(non_leading_corpus_path) if non_leading_corpus_path else None
+        )
+        self._use_german_stemming = use_german_stemming
         self._index_cache_dir = Path(index_cache_dir) if index_cache_dir else None
 
     @property
@@ -191,6 +213,26 @@ class ExperimentConfig:
     def courts_corpus_path(self, value):
         """Set courts corpus path, converting string to Path if needed."""
         self._courts_corpus_path = Path(value) if value else None
+
+    @property
+    def non_leading_corpus_path(self) -> Path | None:
+        """Get non-leading decisions corpus path."""
+        return self._non_leading_corpus_path
+
+    @non_leading_corpus_path.setter
+    def non_leading_corpus_path(self, value):
+        """Set non-leading corpus path, converting string to Path if needed."""
+        self._non_leading_corpus_path = Path(value) if value else None
+
+    @property
+    def use_german_stemming(self) -> bool:
+        """Get whether German stemming is enabled."""
+        return self._use_german_stemming
+
+    @use_german_stemming.setter
+    def use_german_stemming(self, value: bool):
+        """Set whether to use German stemming."""
+        self._use_german_stemming = value
 
     @property
     def index_cache_dir(self) -> Path | None:
@@ -222,6 +264,8 @@ class ExperimentConfig:
         # Extract fields with defaults matching __init__ parameters
         laws_path = config_dict.get("laws_corpus_path")
         courts_path = config_dict.get("courts_corpus_path")
+        non_leading_path = config_dict.get("non_leading_corpus_path")
+        use_stemming = config_dict.get("use_german_stemming", True)
         cache_dir = config_dict.get("index_cache_dir")
 
         instance = cls(
@@ -238,6 +282,8 @@ class ExperimentConfig:
             verifier_threshold=config_dict.get("verifier_threshold", 0.5),
             laws_corpus_path=Path(laws_path) if laws_path else None,
             courts_corpus_path=Path(courts_path) if courts_path else None,
+            non_leading_corpus_path=Path(non_leading_path) if non_leading_path else None,
+            use_german_stemming=use_stemming,
             index_cache_dir=Path(cache_dir) if cache_dir else None,
         )
 
@@ -266,18 +312,22 @@ class ExperimentConfig:
             )
 
         preset = EXPERIMENT_PRESETS[preset_name]
-        
+
         # Get paths and convert to Path objects if they exist
         laws_path = preset.get("laws_corpus_path")
         courts_path = preset.get("courts_corpus_path")
+        non_leading_path = preset.get("non_leading_corpus_path")
+        use_stemming = preset.get("use_german_stemming", True)
         cache_dir = preset.get("index_cache_dir")
-        
+
         return cls(
             name=preset["name"],
             description=preset["description"],
             components=preset["components"],
             laws_corpus_path=Path(laws_path) if laws_path else None,
             courts_corpus_path=Path(courts_path) if courts_path else None,
+            non_leading_corpus_path=Path(non_leading_path) if non_leading_path else None,
+            use_german_stemming=use_stemming,
             index_cache_dir=Path(cache_dir) if cache_dir else None,
         )
 
@@ -312,6 +362,11 @@ class ExperimentConfig:
                     "BM25 is enabled but courts_corpus_path is not configured. "
                     "Set courts_corpus_path in config or preset."
                 )
+            if not self.non_leading_corpus_path:
+                logger.warning(
+                    "BM25 is enabled but non_leading_corpus_path is not configured. "
+                    "Set non_leading_corpus_path in config or preset."
+                )
             if not self.index_cache_dir:
                 logger.warning(
                     "index_cache_dir is not configured. "
@@ -340,5 +395,9 @@ class ExperimentConfig:
             "verifier_threshold": self.verifier_threshold,
             "laws_corpus_path": str(self.laws_corpus_path) if self.laws_corpus_path else None,
             "courts_corpus_path": str(self.courts_corpus_path) if self.courts_corpus_path else None,
+            "non_leading_corpus_path": str(self.non_leading_corpus_path)
+            if self.non_leading_corpus_path
+            else None,
+            "use_german_stemming": self.use_german_stemming,
             "index_cache_dir": str(self.index_cache_dir) if self.index_cache_dir else None,
         }

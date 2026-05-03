@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.omnilex.retrieval.verifier import SCORE_PATTERN, LLMVerifier
 

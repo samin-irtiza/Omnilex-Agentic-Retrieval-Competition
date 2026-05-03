@@ -4,21 +4,17 @@ from __future__ import annotations
 
 import csv
 import json
-import tempfile
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
 from src.omnilex.retrieval.ablation.config import (
     ExperimentConfig,
-    EXPERIMENT_PRESETS,
 )
 from src.omnilex.retrieval.ablation.metrics import MetricsTracker
 from src.omnilex.retrieval.ablation.reporter import ResultsReporter
 from src.omnilex.retrieval.ablation.runner import ExperimentRunner
 from src.omnilex.retrieval.bm25_index import load_corpus_from_csv
-
 
 # ---- Config Tests ----
 
@@ -157,7 +153,6 @@ class TestResultsReporter:
         assert path.exists()
 
         # Verify CSV content
-        import csv
 
         with open(path) as f:
             reader = csv.reader(f)
@@ -268,7 +263,14 @@ class TestExperimentRunner:
         """Test run() with ground_truth as list of strings."""
         config = ExperimentConfig(
             name="test",
-            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": False,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
 
@@ -285,7 +287,14 @@ class TestExperimentRunner:
         """Test run() with ground_truth in mixed format."""
         config = ExperimentConfig(
             name="test",
-            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": False,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
 
@@ -302,7 +311,14 @@ class TestExperimentRunner:
         """Test run() with ground_truth using 'citation' key in dicts."""
         config = ExperimentConfig(
             name="test",
-            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": False,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
 
@@ -354,9 +370,7 @@ class TestLoadCorpusFromCsv:
             f.write("doc_id,content\n")
             f.write("SR 123.1 Art. 5,Some content here\n")
 
-        documents = load_corpus_from_csv(
-            csv_path, citation_col="doc_id", text_col="content"
-        )
+        documents = load_corpus_from_csv(csv_path, citation_col="doc_id", text_col="content")
         assert len(documents) == 1
         assert documents[0]["citation"] == "SR 123.1 Art. 5"
         assert documents[0]["text"] == "Some content here"
@@ -406,7 +420,14 @@ class TestRunnerBM25Init:
         # Create config with paths
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             laws_corpus_path=str(csv_path),
             index_cache_dir=str(tmp_path / "cache"),
         )
@@ -440,7 +461,14 @@ class TestRunnerBM25Init:
         # Create config without cache dir (slow path only)
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             laws_corpus_path=str(csv_path),
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
@@ -465,7 +493,14 @@ class TestRunnerBM25Init:
 
         config = ExperimentConfig(
             name="test",
-            components={"bm25": False, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": False,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             courts_corpus_path=str(csv_path),
             index_cache_dir=str(tmp_path / "cache"),
         )
@@ -495,7 +530,14 @@ class TestRunnerBM25Init:
 
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             laws_corpus_path=str(laws_csv),
             courts_corpus_path=str(courts_csv),
             index_cache_dir=str(tmp_path / "cache"),
@@ -515,7 +557,14 @@ class TestRunnerBM25Init:
         """Test that missing corpus path raises a clear error."""
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             # No laws_corpus_path set
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
@@ -528,7 +577,14 @@ class TestRunnerBM25Init:
         """Test that nonexistent corpus file raises an error."""
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             laws_corpus_path=str(tmp_path / "nonexistent.csv"),
         )
         runner = ExperimentRunner(config, output_dir=tmp_path)
@@ -547,7 +603,14 @@ class TestRunnerBM25Init:
 
         config = ExperimentConfig(
             name="test",
-            components={"bm25": True, "dense": False, "graph": False, "reranker": False, "verifier": False, "rrf_fusion": False},
+            components={
+                "bm25": True,
+                "dense": False,
+                "graph": False,
+                "reranker": False,
+                "verifier": False,
+                "rrf_fusion": False,
+            },
             laws_corpus_path=str(csv_path),
             index_cache_dir=str(tmp_path / "cache"),
         )
