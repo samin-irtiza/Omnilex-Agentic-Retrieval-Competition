@@ -47,22 +47,26 @@ Two baseline notebooks are provided:
    - Achieves ~0.691 Macro F1 on validation set
    - See [Ablation How-To](ablation_howto.md) for running experiments
 
-### Ablation Framework
+### Google Colab Setup
 
-The ablation framework (`src/omnilex/retrieval/ablation/`) allows systematic comparison of pipeline components:
+To run notebooks in Google Colab with persistent caching (avoids 15-25 min setup delays):
 
-```bash
-# Run a specific experiment
-python -c "from omnilex.retrieval.ablation.config import ExperimentConfig; \
-    from omnilex.retrieval.ablation.runner import ExperimentRunner; \
-    config = ExperimentConfig.from_preset('exp_full_pipeline'); \
-    runner = ExperimentRunner(config); \
-    print('Running experiment...')"
+1. **One-Time Setup:**
+   - Create cache directory in Google Drive: `MyDrive/omnilex-cache/`
+   - Populate caches (uv wheels, Kaggle data, pre-built indices) - see [notebooks/colab_startup.ipynb](notebooks/colab_startup.ipynb) for instructions
+   - **New:** The uv cache now uses a **tar.gz archive** (`uv-cache.tar.gz`) for faster sync (~2-3 min vs ~10 min with old approach)
+   - After first run, execute the "Manual Archive Update" cell to create the archive on Drive
 
-# Or use the ablation framework programmatically
-```
+2. **Per Session:**
+   - Open [notebooks/colab_startup.ipynb](notebooks/colab_startup.ipynb) in Colab
+   - Run all cells (mounts Drive, extracts uv cache from archive, creates symlinks)
+   - Open desired baseline notebook and run as usual
 
-See [ablation_howto.md](ablation_howto.md) for detailed examples.
+**Benefits:**
+- Reduces uv cache sync from ~10 minutes to ~2-3 minutes using tar.gz archive
+- Auto-updates archive when new packages are installed (checksum-based detection)
+- Caches packages, data, and indices on Google Drive
+- Falls back to PyPI downloads if archive is missing/corrupted
 
 Both notebooks work in VSCode and can be submitted to Kaggle.
 
