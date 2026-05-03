@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
+
+from tqdm import tqdm
 
 from omnilex.citations.normalizer import CitationNormalizer
 from omnilex.retrieval.bm25_index import BM25Index
@@ -29,15 +32,18 @@ class ExperimentRunner:
         self,
         config: ExperimentConfig,
         output_dir: str | Path = "experiments",
+        verbose: bool = False,
     ):
         """Initialize experiment runner.
 
         Args:
             config: Experiment configuration
             output_dir: Directory for experiment outputs
+            verbose: Enable verbose progress output (tqdm bar, INFO logs, timing)
         """
         self.config = config
         self.output_dir = Path(output_dir)
+        self.verbose = verbose
         self.metrics = MetricsTracker()
         self.reporter = ResultsReporter(self.output_dir)
 
@@ -50,6 +56,28 @@ class ExperimentRunner:
         self._reranker = None
         self._verifier = None
         self._fusion = None
+
+        # Configure logging
+        self._configure_logging()
+
+    def _configure_logging(self) -> None:
+        """Configure logging for the experiment runner.
+
+        Adds a StreamHandler with ERROR level if no handlers exist.
+        Sets propagate=False to avoid duplicate logs from root logger.
+        If verbose=True, upgrades logger to INFO level.
+        """
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setLevel(logging.ERROR)
+            logger.addHandler(handler)
+            logger.setLevel(logging.ERROR)
+            logger.propagate = False
+
+        if self.verbose:
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers:
+                handler.setLevel(logging.INFO)
 
     def _normalize_gold_ids(self, gold_docs: list) -> list[str]:
         """Normalize ground truth documents to list of citation strings.
@@ -191,12 +219,31 @@ class ExperimentRunner:
         """
         results = []
 
-        for query in queries:
+        if self.verbose:
+            logger.info(f"Running experiment: {self.config.name}")
+
+        query_iter = tqdm(
+            queries,
+            desc="Processing queries",
+            disable=not self.verbose,
+        )
+        for i, query in enumerate(query_iter, 1):
             query_id = query["id"]
             query_text = query["query"]
 
+            if self.verbose:
+                logger.info(f"Processing query {i}/{len(queries)} (id={query_id})")
+
             # Stage 1: Retrieval
+            query_iter.set_description("Stage: retrieval")
+            _retrieval_start = time.perf_counter()
             signals = self._run_retrieval(query_text, query_id)
+            _retrieval_time = time.perf_counter() - _retrieval_start
+
+            if self.verbose:
+                for sig_name, sig_docs in signals.items():
+                    logger.info(f"  Retrieved {len(sig_docs)} docs from {sig_name}")
+                logger.info(f"  Retrieval time: {_retrieval_time:.2f}s")
 
             # Track retrieval metrics if ground truth exists
             if ground_truth and query_id in ground_truth:
@@ -207,12 +254,21 @@ class ExperimentRunner:
                 self.metrics.track_retrieval(query_id, retrieved_ids, gold_ids)
 
             # Stage 2: Fusion
+            query_iter.set_description("Stage: fusion")
+            _fusion_start = time.perf_counter()
             if self.config.components.get("rrf_fusion"):
                 fused = self._run_fusion(signals)
             else:
                 fused = self._flatten_signals(signals)
+            _fusion_time = time.perf_counter() - _fusion_start
+
+            if self.verbose:
+                logger.info(f"  Fused to {len(fused)} docs")
+                logger.info(f"  Fusion time: {_fusion_time:.2f}s")
 
             # Stage 3: Reranking
+            query_iter.set_description("Stage: reranking")
+            _reranking_start = time.perf_counter()
             if self.config.components.get("reranker"):
                 reranked = self._run_reranker(query_text, fused)
                 # Track reranker metrics
@@ -222,8 +278,15 @@ class ExperimentRunner:
                     self.metrics.track_reranker(query_id, reranked_ids, gold_ids)
             else:
                 reranked = fused
+            _reranking_time = time.perf_counter() - _reranking_start
+
+            if self.verbose:
+                logger.info(f"  Reranked to {len(reranked)} docs")
+                logger.info(f"  Reranking time: {_reranking_time:.2f}s")
 
             # Stage 4: Verification
+            query_iter.set_description("Stage: verification")
+            _verification_start = time.perf_counter()
             if self.config.components.get("verifier"):
                 verified = self._run_verifier(query_text, reranked)
                 # Track verifier metrics
@@ -233,6 +296,11 @@ class ExperimentRunner:
                     self.metrics.track_verifier(query_id, verified_ids, gold_ids)
             else:
                 verified = reranked
+            _verification_time = time.perf_counter() - _verification_start
+
+            if self.verbose:
+                logger.info(f"  Verified to {len(verified)} docs")
+                logger.info(f"  Verification time: {_verification_time:.2f}s")
 
             # Collect results
             citations = [doc.get("citation", doc.get("id", "")) for doc in verified]
@@ -240,6 +308,9 @@ class ExperimentRunner:
             normalizer = CitationNormalizer()
             citations = normalizer.canonicalize_list(citations)
             results.append({"query_id": query_id, "citations": citations})
+
+        if self.verbose:
+            logger.info("Experiment complete!")
 
         # Prepare output
         output = {
