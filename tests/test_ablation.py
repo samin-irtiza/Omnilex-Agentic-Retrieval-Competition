@@ -251,8 +251,14 @@ class TestExperimentRunner:
 
     def test_normalize_gold_ids_missing_keys(self, caplog):
         """Test _normalize_gold_ids with dict missing 'id' and 'citation' keys."""
+        import logging
+
         config = ExperimentConfig.from_preset("exp_baseline")
-        runner = ExperimentRunner(config)
+        runner = ExperimentRunner(config, verbose=True)  # Enable INFO logging to capture warnings
+
+        # Enable propagation so caplog can capture messages
+        # Logger name is "src.omnilex.retrieval.ablation.runner" (module __name__)
+        logging.getLogger("src.omnilex.retrieval.ablation.runner").propagate = True
 
         gold_docs = [{"foo": "bar"}]
         result = runner._normalize_gold_ids(gold_docs)

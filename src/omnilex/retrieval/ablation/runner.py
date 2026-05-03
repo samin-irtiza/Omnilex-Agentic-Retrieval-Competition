@@ -7,11 +7,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
 
-from tqdm import tqdm
+# Use tqdm.auto for automatic notebook/terminal detection,
+# but force text mode in Kaggle where widget rendering is broken
+if os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):
+    # Kaggle: use standard text-based tqdm (tqdm.notebook widgets don't update properly)
+    from tqdm import tqdm  # noqa: TID251
+else:
+    from tqdm.auto import tqdm
 
 from omnilex.citations.normalizer import CitationNormalizer
 from omnilex.retrieval.bm25_index import BM25Index
@@ -222,92 +229,103 @@ class ExperimentRunner:
         if self.verbose:
             logger.info(f"Running experiment: {self.config.name}")
 
-        query_iter = tqdm(
-            queries,
-            desc="Processing queries",
-            disable=not self.verbose,
-        )
-        for i, query in enumerate(query_iter, 1):
-            query_id = query["id"]
-            query_text = query["query"]
+        # Progress tracking using tqdm.auto (already imported)
+        # Handles notebook/terminal environments automatically
+        pbar = tqdm(total=len(queries), desc="Processing queries") if self.verbose else None
 
-            if self.verbose:
-                logger.info(f"Processing query {i}/{len(queries)} (id={query_id})")
+        try:
+            for i, query in enumerate(queries, 1):
+                if pbar:
+                    pbar.update(1)
+                    pbar.refresh()  # Force redraw to ensure progress is visible
+                    pbar.set_description(f"Stage: retrieval ({i}/{len(queries)})")
 
-            # Stage 1: Retrieval
-            query_iter.set_description("Stage: retrieval")
-            _retrieval_start = time.perf_counter()
-            signals = self._run_retrieval(query_text, query_id)
-            _retrieval_time = time.perf_counter() - _retrieval_start
+                query_id = query["id"]
+                query_text = query["query"]
 
-            if self.verbose:
-                for sig_name, sig_docs in signals.items():
-                    logger.info(f"  Retrieved {len(sig_docs)} docs from {sig_name}")
-                logger.info(f"  Retrieval time: {_retrieval_time:.2f}s")
+                if self.verbose:
+                    logger.info(f"Processing query {i}/{len(queries)} (id={query_id})")
 
-            # Track retrieval metrics if ground truth exists
-            if ground_truth and query_id in ground_truth:
-                gold_ids = self._normalize_gold_ids(ground_truth[query_id])
-                retrieved_ids = []
-                for sig_docs in signals.values():
-                    retrieved_ids.extend([doc.get("id", "") for doc in sig_docs[:50]])
-                self.metrics.track_retrieval(query_id, retrieved_ids, gold_ids)
+                # Stage 1: Retrieval
+                _retrieval_start = time.perf_counter()
+                signals = self._run_retrieval(query_text, query_id)
+                _retrieval_time = time.perf_counter() - _retrieval_start
 
-            # Stage 2: Fusion
-            query_iter.set_description("Stage: fusion")
-            _fusion_start = time.perf_counter()
-            if self.config.components.get("rrf_fusion"):
-                fused = self._run_fusion(signals)
-            else:
-                fused = self._flatten_signals(signals)
-            _fusion_time = time.perf_counter() - _fusion_start
+                if self.verbose:
+                    for sig_name, sig_docs in signals.items():
+                        logger.info(f"  Retrieved {len(sig_docs)} docs from {sig_name}")
+                    logger.info(f"  Retrieval time: {_retrieval_time:.2f}s")
 
-            if self.verbose:
-                logger.info(f"  Fused to {len(fused)} docs")
-                logger.info(f"  Fusion time: {_fusion_time:.2f}s")
-
-            # Stage 3: Reranking
-            query_iter.set_description("Stage: reranking")
-            _reranking_start = time.perf_counter()
-            if self.config.components.get("reranker"):
-                reranked = self._run_reranker(query_text, fused)
-                # Track reranker metrics
+                # Track retrieval metrics if ground truth exists
                 if ground_truth and query_id in ground_truth:
                     gold_ids = self._normalize_gold_ids(ground_truth[query_id])
-                    reranked_ids = [doc.get("id", "") for doc in reranked]
-                    self.metrics.track_reranker(query_id, reranked_ids, gold_ids)
-            else:
-                reranked = fused
-            _reranking_time = time.perf_counter() - _reranking_start
+                    retrieved_ids = []
+                    for sig_docs in signals.values():
+                        retrieved_ids.extend([doc.get("id", "") for doc in sig_docs[:50]])
+                    self.metrics.track_retrieval(query_id, retrieved_ids, gold_ids)
 
-            if self.verbose:
-                logger.info(f"  Reranked to {len(reranked)} docs")
-                logger.info(f"  Reranking time: {_reranking_time:.2f}s")
+                # Stage 2: Fusion
+                if pbar:
+                    pbar.set_description(f"Stage: fusion ({i}/{len(queries)})")
+                _fusion_start = time.perf_counter()
+                if self.config.components.get("rrf_fusion"):
+                    fused = self._run_fusion(signals)
+                else:
+                    fused = self._flatten_signals(signals)
+                _fusion_time = time.perf_counter() - _fusion_start
 
-            # Stage 4: Verification
-            query_iter.set_description("Stage: verification")
-            _verification_start = time.perf_counter()
-            if self.config.components.get("verifier"):
-                verified = self._run_verifier(query_text, reranked)
-                # Track verifier metrics
-                if ground_truth and query_id in ground_truth:
-                    gold_ids = self._normalize_gold_ids(ground_truth[query_id])
-                    verified_ids = [doc.get("id", "") for doc in verified]
-                    self.metrics.track_verifier(query_id, verified_ids, gold_ids)
-            else:
-                verified = reranked
-            _verification_time = time.perf_counter() - _verification_start
+                if self.verbose:
+                    logger.info(f"  Fused to {len(fused)} docs")
+                    logger.info(f"  Fusion time: {_fusion_time:.2f}s")
 
-            if self.verbose:
-                logger.info(f"  Verified to {len(verified)} docs")
-                logger.info(f"  Verification time: {_verification_time:.2f}s")
+                # Stage 3: Reranking
+                if pbar:
+                    pbar.set_description(f"Stage: reranking ({i}/{len(queries)})")
+                _reranking_start = time.perf_counter()
+                if self.config.components.get("reranker"):
+                    reranked = self._run_reranker(query_text, fused)
+                    # Track reranker metrics
+                    if ground_truth and query_id in ground_truth:
+                        gold_ids = self._normalize_gold_ids(ground_truth[query_id])
+                        reranked_ids = [doc.get("id", "") for doc in reranked]
+                        self.metrics.track_reranker(query_id, reranked_ids, gold_ids)
+                else:
+                    reranked = fused
+                _reranking_time = time.perf_counter() - _reranking_start
 
-            # Collect results
-            citations = [doc.get("citation", doc.get("id", "")) for doc in verified]
-            # Normalize citations to canonical format
-            normalizer = CitationNormalizer()
-            citations = normalizer.canonicalize_list(citations)
-            results.append({"query_id": query_id, "citations": citations})
+                if self.verbose:
+                    logger.info(f"  Reranked to {len(reranked)} docs")
+                    logger.info(f"  Reranking time: {_reranking_time:.2f}s")
+
+                # Stage 4: Verification
+                if pbar:
+                    pbar.set_description(f"Stage: verification ({i}/{len(queries)})")
+                _verification_start = time.perf_counter()
+                if self.config.components.get("verifier"):
+                    verified = self._run_verifier(query_text, reranked)
+                    # Track verifier metrics
+                    if ground_truth and query_id in ground_truth:
+                        gold_ids = self._normalize_gold_ids(ground_truth[query_id])
+                        verified_ids = [doc.get("id", "") for doc in verified]
+                        self.metrics.track_verifier(query_id, verified_ids, gold_ids)
+                else:
+                    verified = reranked
+                _verification_time = time.perf_counter() - _verification_start
+
+                if self.verbose:
+                    logger.info(f"  Verified to {len(verified)} docs")
+                    logger.info(f"  Verification time: {_verification_time:.2f}s")
+
+                # Collect results
+                citations = [doc.get("citation", doc.get("id", "")) for doc in verified]
+                # Normalize citations to canonical format
+                normalizer = CitationNormalizer()
+                citations = normalizer.canonicalize_list(citations)
+                results.append({"query_id": query_id, "citations": citations})
+
+        finally:
+            if pbar:
+                pbar.close()
 
         if self.verbose:
             logger.info("Experiment complete!")
